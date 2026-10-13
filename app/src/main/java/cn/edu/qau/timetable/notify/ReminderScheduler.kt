@@ -45,7 +45,8 @@ class ReminderScheduler(
 
         if (!settings.remindEnabled) return
         val termEntity = repo.activeTermEntity() ?: return
-        val term = termEntity.toDomain()
+        // 学期行可能还没填「第 1 周周一」（算不出周次），这时排不了提醒
+        val term = termEntity.toDomain() ?: return
         val courses = repo.coursesNow(termEntity.id)
         if (courses.isEmpty()) return
 

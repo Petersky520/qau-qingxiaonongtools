@@ -94,6 +94,7 @@ fun TimetableScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val weekOverride by vm.weekOverride.collectAsState()
     val settings by vm.settings.collectAsState()
 
+    // 0 = 按日期算不出第几周（没填第 1 周周一，或日期落在学期之外）
     val realCurrent = vm.currentWeek()
     val week = if (weekOverride > 0) weekOverride else realCurrent.coerceAtLeast(1)
     val campus = term?.toDomain()?.campus ?: settings.campus
@@ -106,9 +107,16 @@ fun TimetableScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
         WeekBar(
             week = week,
-            isCurrent = weekOverride == 0 || week == realCurrent,
+            // 手翻到的那一周正好是本周才算"本周"。
+            // realCurrent == 0 时（放假 / 没填开学日期）任何一周都不是本周，
+            // 不能因为 weekOverride == 0 就挂上「本周」——那是在撒谎。
+            isCurrent = realCurrent > 0 && week == realCurrent,
+            realCurrent = realCurrent,
             campus = campus,
-            hasTerm = term != null,
+            // 「有学期」= 有这一行、且填了能解析出来的第 1 周周一。
+            // 少了后半句的话，开学日期缺失时会顶着「第 1 周」显示，
+            // 用户根本看不出是算不出来还是真在第 1 周。
+            hasTerm = term?.startMondayOrNull != null,
             onPrev = { vm.stepWeek(-1) },
             onNext = { vm.stepWeek(1) },
             onToday = { vm.setWeek(0) },
@@ -165,6 +173,7 @@ fun TimetableScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 private fun WeekBar(
     week: Int,
     isCurrent: Boolean,
+    realCurrent: Int,
     campus: Campus,
     hasTerm: Boolean,
     onPrev: () -> Unit,
@@ -174,6 +183,14 @@ private fun WeekBar(
     val slideSpec = motionOf(QauMotion.SlideSpatial)
     val fadeSpec = motionOf(QauMotion.Effects)
     val weekText = if (hasTerm) "第 $week 周" else "未设置学期"
+    // 有学期、但按日期推算不出周次（放假 / 没填第 1 周周一）时要说清楚，
+    // 否则用户看到「第 1 周」会以为 App 算错了。
+    val subtitle = when {
+        !hasTerm -> campus.label
+        realCurrent <= 0 -> "不在学期周次内 · ${campus.label}"
+        isCurrent -> "本周 · ${campus.label}"
+        else -> campus.label
+    }
 
     Surface(tonalElevation = 2.dp) {
         Row(
@@ -203,7 +220,7 @@ private fun WeekBar(
                     Text(text = text, style = MaterialTheme.typography.titleMedium)
                 }
                 Text(
-                    text = if (isCurrent) "本周 · ${campus.label}" else campus.label,
+                    text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }

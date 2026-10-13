@@ -71,14 +71,31 @@ class MainViewModel(
 
     fun clearToast() { _toast.value = null }
 
+    init {
+        // 升级自愈：2.1 之前「学期」设置只写 DataStore，数据库里那份
+        // 还是首次导入课表时猜的日期。启动时对齐一次，用户什么都不用点。
+        viewModelScope.launch {
+            runCatching {
+                if (repo.syncTermFromSettings()) {
+                    reminders.reschedule()
+                    silence.reschedule()
+                }
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- 周次
 
-    /** 学校当前是第几周（依据学期第 1 周周一推算）。 */
+    /**
+     * 学校当前是第几周（依据学期第 1 周周一推算）。
+     *
+     * 返回 0 表示「算不出来」：没导入过课表、没填第 1 周周一、
+     * 或者日期落在学期之外。调用方据此显示「不在学期周次内」。
+     */
     fun currentWeek(): Int {
         val t = activeTerm.value ?: return 0
-        val term = t.toDomain()
-        val w = term.weekOf(LocalDate.now())
-        return w.coerceAtLeast(0)
+        val term = t.toDomain() ?: return 0
+        return term.weekOf(LocalDate.now()).coerceAtLeast(0)
     }
 
     val effectiveWeek: Int
@@ -108,12 +125,23 @@ class MainViewModel(
     }
 
     fun setCampus(c: Campus) = safeLaunch {
-        repo.settings.setCampus(c)
+        // 校区要写进当前学期那一行：课表网格、提醒、静音的作息时间都读它，
+        // 只改 DataStore 的话要等下次导入课表才会生效。
+        repo.applyCampus(c)
         reminders.reschedule()
+        // 两个校区上午整体差 30 分钟，静音时段也得按新作息重算
+        silence.reschedule()
     }
 
     fun setTerm(name: String, startMonday: String, totalWeeks: Int) = safeLaunch {
-        repo.settings.setTerm(name, startMonday, totalWeeks)
+        // 注意：这里必须落到 Room 的 terms 表上。周次换算是从那一行读 startDate 的，
+        // 只写 DataStore 的话「第 1 周周一」改了也不会生效。
+        repo.applyTermSettings(
+            name = name,
+            startMonday = startMonday,
+            totalWeeks = totalWeeks,
+            campus = settings.value.campus,
+        )
         // 「第 1 周周一」决定 weekOf() 的结果：改完这一项，
         // 哪天有课整个变了，提醒和静音都得重排。
         reminders.reschedule()

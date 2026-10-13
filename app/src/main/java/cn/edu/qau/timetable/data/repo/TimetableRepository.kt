@@ -49,6 +49,136 @@ class TimetableRepository(
 
     suspend fun activeTerm(): Term? = db.termDao().active()?.toDomain()
 
+    // ------------------------------------------------------------ 学期设置
+
+    /**
+     * 保存设置页填的学期信息。
+     *
+     * 必须**同时**写两个地方，否则周次换算是坏的：
+     *   · DataStore 那份是抓取时 [ensureTerm] 的输入；
+     *   · 而 `Term.weekOf()`（还有课表网格、提醒、静音、桌面小组件）读的是
+     *     Room `terms` 表里那一行的 `startDate`。
+     *
+     * 之前这里只写 DataStore，`terms` 行建好之后再也没有更新过 ——
+     * 于是「第 1 周周一」改了等于没改，周次永远停在第一次导入时猜出来的那一份。
+     */
+    suspend fun applyTermSettings(
+        name: String,
+        startMonday: String,
+        totalWeeks: Int,
+        campus: Campus,
+    ): TermEntity {
+        // 学期名留空时优先沿用当前学期，而不是重新猜一个 ——
+        // 猜出来的名字一旦和现有学期对不上，`byName` 会新建一行，
+        // 用户只想改个日期却把课表"改没了"。
+        val resolvedName = name.trim().ifBlank {
+            db.termDao().active()?.name ?: guessTermName()
+        }
+        settings.setTerm(resolvedName, startMonday.trim(), totalWeeks)
+
+        val entity = upsertActiveTerm(
+            name = resolvedName,
+            startMonday = startMonday.trim(),
+            totalWeeks = totalWeeks,
+            campus = campus,
+        )
+        runCatching { TimetableWidgetProvider.refresh(context) }
+        return entity
+    }
+
+    /**
+     * 启动时对齐一次：把设置里的学期信息补写到数据库那一行上。
+     *
+     * 兜的是**升级**场景 —— 2.1 之前设置只写 DataStore，`terms` 行里留着的
+     * 还是首次导入课表时按月份猜出来的日期。如果只修「保存」那条路，
+     * 老用户装上新版什么也不点的话，那份旧日期会继续算错周次，
+     * 看起来就像根本没修。
+     *
+     * 返回是否真的改动了（改了就说明得重排提醒和静音）。
+     */
+    suspend fun syncTermFromSettings(): Boolean {
+        val current = settings.current()
+        val active = db.termDao().active() ?: return false
+        val name = current.termName.ifBlank { active.name }
+        val upToDate = name == active.name &&
+            (current.startMonday.isBlank() || current.startMonday == active.startDate) &&
+            current.totalWeeks == active.totalWeeks &&
+            Campus.fromName(active.campus) == current.campus
+        if (upToDate) return false
+
+        applyTermSettings(
+            name = name,
+            startMonday = current.startMonday,
+            totalWeeks = current.totalWeeks,
+            campus = current.campus,
+        )
+        return true
+    }
+
+    /**
+     * 切换校区。
+     *
+     * 校区是全局设置，但课表网格 / 提醒 / 静音的作息时间读的是当前学期的 campus，
+     * 所以两边都得写 —— 否则会出现「设置里选了平度、课表还按城阳算时间」。
+     */
+    suspend fun applyCampus(campus: Campus) {
+        settings.setCampus(campus)
+        val active = db.termDao().active() ?: return
+        if (Campus.fromName(active.campus) != campus) {
+            db.termDao().update(active.copy(campus = campus.name))
+        }
+        runCatching { TimetableWidgetProvider.refresh(context) }
+    }
+
+    /**
+     * 按学期名 upsert 当前学期，并置为 active。
+     *
+     * `startMonday` 留空时按学期名粗略估算（和设置页的说明一致：
+     * 「留空则按月份粗略估算」）。估算函数是纯函数，同一个学期名结果固定，
+     * 不会因为今天几号而漂移。
+     */
+    private suspend fun upsertActiveTerm(
+        name: String,
+        startMonday: String,
+        totalWeeks: Int,
+        campus: Campus,
+    ): TermEntity {
+        val existing = db.termDao().byName(name)
+        val id = if (existing == null) {
+            val start = startMonday.ifBlank {
+                Term.guessStartMonday(name)?.toString() ?: LocalDate.now().toString()
+            }
+            db.termDao().insert(
+                TermEntity(
+                    name = name,
+                    startDate = start,
+                    totalWeeks = totalWeeks,
+                    campus = campus.name,
+                    active = true,
+                )
+            )
+        } else {
+            db.termDao().update(
+                existing.copy(
+                    startDate = startMonday.ifBlank { existing.startDate },
+                    totalWeeks = totalWeeks,
+                    campus = campus.name,
+                )
+            )
+            existing.id
+        }
+        db.termDao().setActive(id)
+        return db.termDao().byName(name)
+            ?: TermEntity(
+                id = id,
+                name = name,
+                startDate = startMonday,
+                totalWeeks = totalWeeks,
+                campus = campus.name,
+                active = true,
+            )
+    }
+
     // ------------------------------------------------------------ 写入抓取结果
 
     /**
@@ -96,25 +226,21 @@ class TimetableRepository(
         runCatching { TimetableWidgetProvider.refresh(context) }
     }
 
-    private suspend fun ensureTerm(current: AppSettings): TermEntity {
-        val name = current.termName.ifBlank { guessTermName() }
-        val existing = db.termDao().byName(name)
-        if (existing != null) return existing
-        val start = current.startMonday.ifBlank {
-            Term.guessStartMonday(name)?.toString() ?: LocalDate.now().toString()
-        }
-        val id = db.termDao().insert(
-            TermEntity(
-                name = name,
-                startDate = start,
-                totalWeeks = current.totalWeeks,
-                campus = current.campus.name,
-                active = true,
-            )
+    /**
+     * 抓取入库时找到（或建好）当前学期。
+     *
+     * 和设置页共用同一个 upsert —— 这样抓取时也会把设置里填的
+     * 「第 1 周周一 / 总周数 / 校区」带进 `terms` 表。
+     * 以前这里对已存在的学期直接 `return existing`，于是设置页填的东西
+     * 只有在**第一次**导入时才会生效。
+     */
+    private suspend fun ensureTerm(current: AppSettings): TermEntity =
+        upsertActiveTerm(
+            name = current.termName.ifBlank { guessTermName() },
+            startMonday = current.startMonday,
+            totalWeeks = current.totalWeeks,
+            campus = current.campus,
         )
-        db.termDao().setActive(id)
-        return db.termDao().byName(name) ?: TermEntity(id = id, name = name, startDate = start)
-    }
 
     private suspend fun ingestTimetable(p: QzPayload, current: AppSettings): IngestResult {
         val events = QzTableParser.parseTimetable(p.rows, p.rowspans)

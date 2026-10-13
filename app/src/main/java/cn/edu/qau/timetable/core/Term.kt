@@ -13,12 +13,21 @@ data class Term(
     val totalWeeks: Int = DEFAULT_WEEKS,
     val campus: Campus = Campus.CHENGYANG,
 ) {
-    /** 给定日期是第几周；早于开学返回 0。 */
+    /**
+     * 给定日期是第几周。
+     *
+     * 早于开学、或已经上完 [totalWeeks] 周（放假了）都返回 **0**，
+     * 调用方据此显示「不在学期周次内」。
+     *
+     * 这里原本写的是 `if (w > totalWeeks) w else w` —— 两个分支一样，
+     * 于是寒假里会一路显示「第 21 周」「第 22 周」，App 里那个
+     * 「不在学期周次内」的空状态永远走不到。
+     */
     fun weekOf(date: LocalDate): Int {
         val days = ChronoUnit.DAYS.between(startMonday, date)
         if (days < 0) return 0
         val w = (days / 7).toInt() + 1
-        return if (w > totalWeeks) w else w
+        return if (w > totalWeeks) 0 else w
     }
 
     fun mondayOfWeek(week: Int): LocalDate = startMonday.plusWeeks((week - 1).toLong())

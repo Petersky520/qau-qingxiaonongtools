@@ -83,7 +83,7 @@ class SilenceActionReceiver : BroadcastReceiver() {
     ): LocalTime? {
         val fromTimetable = runCatching {
             val entity = repo.activeTermEntity() ?: return@runCatching null
-            val term = entity.toDomain()
+            val term = entity.toDomain() ?: return@runCatching null
             val week = term.weekOf(today)
             if (week !in 1..term.totalWeeks) return@runCatching null
             val spans = SilencePlan.spansOn(

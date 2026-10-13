@@ -21,12 +21,26 @@ data class TermEntity(
     val campus: String = Campus.CHENGYANG.name,
     val active: Boolean = false,
 ) {
-    fun toDomain(): Term = Term(
-        name = name,
-        startMonday = runCatching { LocalDate.parse(startDate) }.getOrElse { LocalDate.now() },
-        totalWeeks = totalWeeks,
-        campus = Campus.fromName(campus),
-    )
+    /** 第 1 周周一；没填或格式不对时返回 null。 */
+    val startMondayOrNull: LocalDate?
+        get() = runCatching { LocalDate.parse(startDate) }.getOrNull()
+
+    /**
+     * 转成领域对象；**算不出第 1 周周一就返回 null**。
+     *
+     * 以前这里解析失败时兜底成 `LocalDate.now()`，等于说「今天就是第 1 周」——
+     * 周次换算会一直显示「第 1 周」，比报错更难发现。
+     * 宁可把 null 往上传，让 UI 老实说「推算不出第几周」。
+     */
+    fun toDomain(): Term? {
+        val start = startMondayOrNull ?: return null
+        return Term(
+            name = name,
+            startMonday = start,
+            totalWeeks = totalWeeks,
+            campus = Campus.fromName(campus),
+        )
+    }
 }
 
 @Entity(tableName = "courses", indices = [Index("termId")])

@@ -75,10 +75,23 @@ fun TodayScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     }
 
     if (week <= 0) {
-        EmptyState(
-            "不在学期周次内",
-            "当前日期推算不出第几周。请在「设置」里填写本学期第 1 周的周一日期。",
-        )
+        // 算不出周次有好几种原因，别一律甩「去设置里填日期」——
+        // 放假期间填一百次日期也还是算不出来。
+        val termDomain = term?.toDomain()
+        val hint = when {
+            term == null ->
+                "还没导入课表。点右上角「同步」登录教务系统抓取一次。"
+
+            termDomain == null ->
+                "「学期」里还没填第 1 周周一，所以推算不出周次。去「设置 → 学期」补上即可。"
+
+            today.isBefore(termDomain.startMonday) ->
+                "还没开学。本学期第 1 周是 ${termDomain.startMonday}。"
+
+            else ->
+                "本学期课表已经结束了（共 ${termDomain.totalWeeks} 周）。"
+        }
+        EmptyState("不在学期周次内", hint)
         return
     }
 
