@@ -22,18 +22,18 @@
       因此必须允许 cleartext，否则 WebView 无法加载登录页。
     -->
     <application
-        android:name=".QauApp"
+        android:name=".QxnApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.QauTimetable">
+        android:theme="@style/Theme.Qxn">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.QauTimetable"
+            android:theme="@style/Theme.Qxn"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

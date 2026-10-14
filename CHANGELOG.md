@@ -1,7 +1,50 @@
 # 更新日志
 
 版本号与 `app/build.gradle.kts` 里的 `versionName` 一致。
-每个版本的 APK 见 [Releases](https://github.com/Petersky520/qau-timetable/releases)。
+每个版本的 APK 见 [Releases](https://github.com/Petersky520/qau-qingxiaonongtools/releases)。
+
+---
+
+## [3.0] - 2026-10-14
+
+**更名与换包名**：应用名 `青农课表` → **`青小农`**，
+包名 `cn.edu.qau.timetable` → **`com.tiever.qxn`**。
+
+### ⚠️ 装之前要知道的
+
+包名一换，系统就把它当成**另一个 App**，所以：
+
+- **不能覆盖安装**。旧版（`cn.edu.qau.timetable`）会继续留在桌面上，
+  两个 App 可以并存。确认新版没问题后自己把旧的卸掉即可。
+- **数据不继承**。课表、成绩、考试、教室、调休、界面设置全部要重新来一遍
+  —— 重新登录同步一次课表，再在设置里补上「第 1 周周一 / 总周数 / 校区」。
+- **桌面小组件要重新添加**（旧组件属于旧包名，会显示成空白/失效）。
+- **「勿扰 / 通知策略」权限要重新授予**（权限是按包名记的），
+  否则上课自动静音不生效，App 内会提示并引导过去。
+- 上课提醒、静音闹钟由新 App 重新排，不需要手动处理。
+
+### 改名范围
+
+不只是显示名称，带 `Qau` 前缀的内部标识一并换掉了，避免代码里一半旧名一半新名：
+
+| 类别 | 旧 | 新 |
+|---|---|---|
+| applicationId / namespace | `cn.edu.qau.timetable` | `com.tiever.qxn` |
+| Kotlin 包路径 | `app/src/main/java/cn/edu/qau/timetable/` | `app/src/main/java/com/tiever/qxn/` |
+| Application 类 | `QauApp` | `QxnApp` |
+| Compose 主题函数 | `QauTheme` | `QxnTheme` |
+| 运动系统对象 | `QauMotion` | `QxnMotion` |
+| XML 主题 | `Theme.QauTimetable` | `Theme.Qxn` |
+| WebView JS 桥 | `QauBridge` / `window.__qauExtract` / `window.__qauFindLinks` | `QxnBridge` / `window.__qxn*` |
+| Room 数据库文件 | `qau_timetable.db` | `qxn_timetable.db` |
+| DataStore 文件 | `qau_settings` | `qxn_settings` |
+| Gradle 根项目名 | `QauTimetable` | `QxnTimetable` |
+
+**没有动的**：学校教务系统的真实域名 `jwglxt.qau.edu.cn` / `jw.qau.edu.cn`
+（那是学校的地址）；注释里提到「青农大」的地方（指学校，不是 App）；
+版本历史里的旧记录。
+
+学号密码、教务抓取逻辑、其余功能与 2.1 完全一致，没有功能改动。
 
 ---
 

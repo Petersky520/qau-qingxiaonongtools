@@ -43,7 +43,7 @@
             android:textColor="@color/widget_on_surface"
             android:textSize="15sp"
             android:textStyle="bold"
-            android:text="青农课表 · 周三" />
+            android:text="青小农 · 周三" />
 
         <TextView
             android:id="@+id/widget_badge"
